@@ -25,7 +25,7 @@ local function Classes()
         -- Scan cli list output and collect indices whose <entry> matches <pattern> (eg. entry: description, pattern: 'TCP')
         -- entry parameter: specifies by what the index is searched for (eg. name, description)
         -- pattern parameter: pattern inside the given the given entry (eg. inside description search for '123')
-        local function get_indexes(cli_command, entry, pattern)
+        local function get_indexes(cli_command, pattern, entry)
             local index_table = {}
             local _, bracket_count = cli_command:gsub("%[%d+%]", "")
             local cl = cli(cli_command)
@@ -119,7 +119,7 @@ local function Classes()
         -- entry parameter: name for entry/attribute to be added (eg. for Ports tables, add entry 'mode')
         -- value parameter: value for  added entry, if not given use default value '---'
         -- key parameter: if key is given, add entry to specific key, else add entry to every table element
-        function selfs.add_entry(tbl, entry, value, key)
+        function self.add_entry(tbl, entry, value, key)
             value = value or '---'
             if key then
                 local sub_tbl = tbl[key]
@@ -183,8 +183,10 @@ local function Classes()
             end
         end
 
-        function self.get_index(cli, entry, pattern)
-            local ok, indexes = get_indexes(cli, entry, pattern)
+        -- get index of first found entry in an endless list
+        -- entry specifies where to look for eg. description, name; entry can be left empty
+        function self.get_index(cli, pattern, entry)
+            local ok, indexes = get_indexes(cli, pattern, entry)
             if ok then
                 for k in self.sort_table(indexes, function(a, b) return a<b end) do
                     return true, k
@@ -193,8 +195,9 @@ local function Classes()
             return false, nil
         end
 
-        function self.get_indexes(cli, entry, pattern)
-            ok, indexes = get_indexes(cli, entry, pattern)
+        -- same as function above but returns a list of indices
+        function self.get_indexes(cli, pattern, entry)
+            ok, indexes = get_indexes(cli, pattern, entry)
             if ok then
                 return true, indexes
             end
@@ -203,7 +206,7 @@ local function Classes()
 
         -- returns first index found from cli list output by name (eg. name="net1")
         function self.get_index_by_name(cli, name)
-            local ok, index_table = get_indexes(cli, "name", name)
+            local ok, index_table = get_indexes(cli, name, "name")
             if not ok then
                 return false, nil
             end
@@ -214,7 +217,7 @@ local function Classes()
 
         -- returns first index found by pattern in description (eg. description='TCP Port 123', pattern == '123')
         function self.get_index_by_description(cli, pattern)
-            local ok, index_table = get_indexes(cli, "description", pattern)
+            local ok, index_table = get_indexes(cli, pattern, "description")
             if not ok then
                 return false, nil
             end
@@ -225,7 +228,7 @@ local function Classes()
 
         -- returns table of indexes, from cli list output, found by pattern in description
         function self.get_indexes_by_description(cli, pattern)
-            local ok, index_table = get_indexes(cli, "description", pattern)
+            local ok, index_table = get_indexes(cli, pattern, "description")
             if not ok then
                 return false, nil
             end
