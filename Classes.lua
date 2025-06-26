@@ -331,7 +331,7 @@ local function Classes()
                     return false
                 end
             end
-            local exists, imsi, apn
+            local exists, imsi_usim, apn
             if not run_time then
                 run_time = true
             end
@@ -347,11 +347,13 @@ local function Classes()
                 if imsi_usim:find("^(%d+)$") or run_time == 0 then
                     break
                 end
-                run_time = run_time - 1
+                if not type(run_time) == "boolean" then
+                    run_time = run_time - 1
+                end
                 sleep(1)
             end
             for imsis_usims_provider, apn_provider in pairs(apn_table) do
-                if imsi:find(imsis_usims_provider) then
+                if imsi_usim:find(imsis_usims_provider) then
                     apn = apn_provider
                 end
             end
