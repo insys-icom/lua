@@ -10,12 +10,13 @@ local function Classes()
         local _device_type = cli("status.device_info.device_type")
 
         -- Detect all inserted MR Cards and store them in _cards
+        -- need to change if same board_types are hereg
         local function _cards_table()
             for _, b in pairs(_card_types) do
                 for n = 1, 5 do
                     local exist = pcall(cli, "status." .. b .. n)
                     if exist then
-                        _cards[cli("status.device_info.slot[" .. n .. "].board_type")] = b .. n
+                        _cards[cli("status.device_info.slot[" .. n .. "].board_type") .. n] = b .. n
                     end
                 end
             end
@@ -605,6 +606,7 @@ local function Classes()
         local _modem
         local _sender
         local interfaces = selfs.Interfaces
+        local con = selfs.Connectivity
         local wans = interfaces.get_wan_interfaces()
 
         -- sends mail to desired mail address with text and subject
@@ -628,15 +630,22 @@ local function Classes()
                 for _, v in pairs(wans) do
                     if v.net:find("lte") then
                         local default = v.net
+                        local ok, exit_code = con.lte_check_state(default)
                         if v.net:find("lte_serial") then
                             local lte, slot = v.net:match("^(lte)_serial(%d)$")
                             default = lte .. slot
                         end
-                        return default
+                        if ok and exit_code >= 0 then
+                            return default
+                        end
                     end
                 end
             end)()
             modem = modem or default_modem
+            if not(modem or default_modem) then
+                lua_log("ERROR: No modem was found to send a SMS")
+                return false
+            end
             cli("help.debug.sms.modem=" .. modem)
             cli("help.debug.sms.recipient=" .. recipient)
             cli("help.debug.sms.text=-----BEGIN TEXT-----" .. text .. "-----END TEXT-----")
