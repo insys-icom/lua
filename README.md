@@ -332,8 +332,8 @@ The goal of this script is to be as **generic** as possible for **minimum mainte
 
 | Function | Description |
 |----------|-------------|
-| `ok, result = ping(dest, net, num_of_pings)` | Performs IPv4 ping on interface `net` to destination `dest`. |
-| `ok, result = ping6(dest, net, num_of_pings)` | Performs IPv6 ping. |
+| `ok, result = ping (dest, net, wait_time, ping_time, ping_interval, num_of_pings)` | Performs IPv4 ping on interface `net` to destination `dest`. |
+| `ok, result = ping6(dest, net, wait_time, ping_time, ping_interval, num_of_pings)` | Performs IPv6 ping. |
 | `state = lte_check_state(modem)` | Returns LTE modem status (Online, Offline, etc.). |
 | `ok = restart_modem(modem)` | Restarts LTE modem and reconnects. |
 
