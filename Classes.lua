@@ -15,8 +15,10 @@ local function Classes()
             for _, b in pairs(_card_types) do
                 for n = 1, 5 do
                     local exist = pcall(cli, "status." .. b .. n)
-                    if exist then
+                    if exist and not _cards[cli("status.device_info.slot[" .. n .. "].board_type") .. n] then
                         _cards[cli("status.device_info.slot[" .. n .. "].board_type") .. n] = b .. n
+                    elseif exist and _cards[cli("status.device_info.slot[" .. n .. "].board_type") .. n] then
+                        _cards[cli("status.device_info.slot[" .. n .. "].board_type") .. n.."a"] = b..n
                     end
                 end
             end
@@ -266,7 +268,6 @@ local function Classes()
         local _net_interfaces = {}
         local _wan_interfaces = {}
         local _vpn_interfaces = {}
-        local _ip_addresses = {}
         local help = selfs.Helper
         local _cards = help.get_cards()
 
@@ -288,8 +289,11 @@ local function Classes()
         -- returns table of available WAN-cards that double as interfaces (LTE, DSL)
         local function _wans()
             for _, v in pairs(_cards) do
-                if v:find("lte") then
+                if v:match("^lte%d$") then
                     _wan_interfaces[v] = {net = v}
+                elseif v:match("^lte_serial%d$") then
+                    local lte, slot = v:match("^(lte)_serial(%d)$")
+                    _wan_interfaces[lte..slot] = {net = lte..slot}
                 elseif v:find("dsl") then
                     _wan_interfaces[v] = {net = v}
                 end
@@ -403,16 +407,16 @@ local function Classes()
         -- returns table of ip addresses for given ipnet
         function self.get_ip_addresses(net)
             _ip_nets()
-            if next(_ip_addresses) then
-                for k in pairs(_ip_addresses) do
-                    _ip_addresses[k] = nil
-                end
+            local ip_net = _net_interfaces[net]
+            if not ip_net then
+                return false
             end
-            if _net_interfaces[net] then
-                _ip_addresses = _net_interfaces[net].ip_address
-                return _ip_addresses
+            local ip_addresses = {}
+            for ip_index, ip_contents in ipairs(ip_net.ip_address) do
+                ip_addresses[ip_index] = {address = ip_contents.address,
+                                          index   = ip_contents.index}
             end
-            return false
+            return ip_addresses
         end
 
         function self.set_apn_by_imsi(modem, apn_table, run_time)
@@ -528,7 +532,7 @@ local function Classes()
             end
             -- returns link of port and updates entry
             if _ethernet_ports[port] then
-                link= _ethernet_ports[port].link
+                link = _ethernet_ports[port].link
             else
                 link = _sfp_ports[port].link
             end
@@ -731,11 +735,15 @@ local function Classes()
         end
 
         -- make ping to an IP Addresss
-        local function ping(dest, net, num_of_pings, vx)
+        local function ping(dest, net, wait_time, ping_time, ping_interval, num_of_pings, vx)
             local exist, result, exit
 
             -- if net and/or number of pings are set, check for validity and set parameter else use default empty value
             if net and net ~= "" then
+                if net:find("lte_serial") then
+                    local lte, slot = net:match("^(lte)_serial(%d)")
+                    net = lte .. slot
+                end
                 if not(_ipnet[net] or _wans[net] or _vpns[net]) then
                     lua_log("ERROR: Source Interface " .. net .. " does not exist")
                     return false, nil
@@ -744,19 +752,49 @@ local function Classes()
             else
                 net = ""
             end
+
             if num_of_pings and num_of_pings ~= "" then
                 num_of_pings = tostring(num_of_pings)
-                if not num_of_pings:match("^%d+$") then
+                if not num_of_pings:match("^%d+$") or tonumber(num_of_pings) < 1 then
                     lua_log("ERROR: Chosen Number of Pings is invalid")
                     return false, nil
                 end
                 num_of_pings = "-c" .. num_of_pings .. " "
             else
-                num_of_pings = "-c1 "
+                num_of_pings = ""
             end
-            if net:find("lte_serial") then
-                local lte, slot = net:match("^(lte)_serial(%d)")
-                net = lte .. slot
+
+            if wait_time and wait_time ~= "" then
+                wait_time = tostring(wait_time)
+                if not wait_time:match("^%d+%.?%d*$") or tonumber(wait_time) < 0.002 then
+                    lua_log("ERROR: Chosen time to wait for ping response is invalid")
+                    return false, nil
+                end
+                wait_time = "-W" .. wait_time .. " "
+            else
+                wait_time = "-W5 "
+            end
+
+            if ping_time and ping_time ~= "" then
+                ping_time = tostring(ping_time)
+                if not ping_time:match("^%d+%.?%d*$") then
+                    lua_log("ERROR: Chosen timeframe for pings is invalid")
+                    return false,nil
+                end
+                ping_time = "-w"..ping_time.." "
+            else
+                ping_time = ""
+            end
+
+            if ping_interval and ping_interval ~= "" then
+                ping_interval = tostring(ping_interval)
+                if not ping_interval:match("^%d+%.?%d*$") or tonumber(ping_interval) < 0.002 then
+                    lua_log("ERROR: Time between sending pings is invalid")
+                    return false, nil
+                end
+                ping_interval = "-i"..ping_interval.." "
+            else
+                ping_interval = "-i0.9 "
             end
 
             -- checks for syntax of IP-Address and determines type of ICMP-Ping. versions == 6 for PING6, version == "" for PING4
@@ -771,7 +809,7 @@ local function Classes()
                 return false
             end
             vx = (vx == 4) and "" or 6
-            exist, result, exit = pcall(cli, "help.debug.tool=ping"..vx.." "..net..num_of_pings..dest)
+            exist, result, exit = pcall(cli, "help.debug.tool=ping"..vx.." "..net..num_of_pings..wait_time..ping_time..ping_interval..dest)
             -- if any other errors occur
             if exit ~= 0 or not exist then
                 lua_log("Ping cannot be made: " ..  result)
@@ -793,15 +831,15 @@ local function Classes()
         -- ping a v4 address
         -- net parameter(OPTIONAL): ping from given interface
         -- num_of_pings parameter(OPTIONAL): number of pings
-        function self.ping(dest, net, num_of_pings)
-            local ok, result = ping(dest, net, num_of_pings, 4)
+        function self.ping(dest, net, wait_time, ping_time, ping_interval, num_of_pings)
+            local ok, result = ping(dest, net, wait_time, ping_time, ping_interval, num_of_pings, 4)
             return ok, result
         end
 
         -- ping a v6 address
         -- same optional parameters as above
-        function self.ping6(dest, net, num_of_pings)
-            local ok, result = ping(dest, net, num_of_pings, 6)
+        function self.ping6(dest, net, wait_time, ping_time, ping_interval, num_of_pings)
+            local ok, result = ping(dest, net, wait_time, ping_time, ping_interval, num_of_pings, 6)
             return ok, result
         end
 
